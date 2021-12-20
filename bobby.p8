@@ -1,6 +1,23 @@
 pico-8 cartridge // http://www.pico-8.com
 version 29
 __lua__
+
+--vecteurs
+---------------------------------------
+    vec={} vec.__index = vec
+    --
+        function vec:__add(b)  return v(self.x+b.x,self.y+b.y)end
+        function vec:__sub(b)  return v(self.x-b.x,self.y-b.y)end
+        function vec:__div(d)  return v(self.x/d,self.y/d)end
+        function vec:__mul(m)  return v(self.x*m,self.y*m) end
+        function vec:__len()    return (sqrt(self.x^2+self.y^2)) end
+        function vec:__peek()   return self/#self end -- normalize
+        function vec:__or(m) if (#self>m) then return  @self*m else return self end end
+        function vec:to_block() return {self.x\8,self.y\8} end
+        function v(x,y)      return setmetatable({x=x,y=y or 0,},vec)end
+    --
+----------------------------------------
+
 --player
 function camera_follow_px()
  camx = g.mychar.x - 7 * 8
