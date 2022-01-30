@@ -1,952 +1,554 @@
 pico-8 cartridge // http://www.pico-8.com
-version 29
+version 32
 __lua__
+--https://fr.pngtree.com/free-animals-photos
 
---vecteurs
+
+--  game params
+--------------------------------------
+    GRAVITY = 0.3
+    seed = rnd(120) srand(seed)
+--
+
+--  useful, various
+----------------------------------------
+    time=0
+    nul = function()end  -- useful useless function
+    
+    local function cowrap(f)
+        local coro, done = cocreate(f)
+        return function(...)
+            if not done then
+                assert(coresume(coro, ...))
+                done = costatus(coro) == 'dead'
+            end
+            return done
+        end
+    end
+
+    --- player constants
+    RIGHT = true LEFT = false
+    RUNNING_R = 1 RUNNING_L = 3
+    STILL = 2 CLIMBING = 7 TALKING = 9
+    MOVE_DOWN = 4 MOVE_UP = 5
+    IN_AIR_1 = 6 IN_AIR_2 = 8
+    a_MEDIUM = 2 a_VERY_SLOW = 20
+	a_SLOW = 5
+
+    function blackline(s,x,y,h,w,d,col)
+        local _col=col or 0
+        for i=1,15 do pal(i,col) end
+        spr(s,x-1,y,h,w,d)
+        spr(s,x+1,y,h,w,d)
+        spr(s,x,y-1,h,w,d)
+        spr(s,x,y+1,h,w,d)
+        pal()
+    end
+--
+
+--  vecteurs
 ---------------------------------------
     vec={} vec.__index = vec
-    --
-        function vec:__add(b)  return v(self.x+b.x,self.y+b.y)end
-        function vec:__sub(b)  return v(self.x-b.x,self.y-b.y)end
-        function vec:__div(d)  return v(self.x/d,self.y/d)end
-        function vec:__mul(m)  return v(self.x*m,self.y*m) end
-        function vec:__len()    return (sqrt(self.x^2+self.y^2)) end
-        function vec:__peek()   return self/#self end -- normalize
-        function vec:__or(m) if (#self>m) then return  @self*m else return self end end
-        function vec:to_block() return {self.x\8,self.y\8} end
-        function v(x,y)      return setmetatable({x=x,y=y or 0,},vec)end
-    --
-----------------------------------------
-
---player
-function camera_follow_px()
- camx = g.mychar.x - 7 * 8
- if(camx<45*8) then camx = 45*8 end
-  if(camx>90*8) then camx = 90*8 end
- camera(camx,0)
-end
-
-game = {
- state = 0
-}
-
-function game:new(o)
- o = o or {}
- setmetatable(o, self)
- self.__index = self
- return o
-end
-
-function game:update()
- -- en train de jouer
- if(self.state == 0) then
-  update_player()
- 	update_smoke()
- 	update_flowers()
-  if(d1:triggered() and not talking) then
-   d1:display()
-   self.state = 1
-  end
- end
- --parler au vieux
- if(self.state == 1) then
-  if d_finished then
-   self.state = 2
-   d_finished = false
-  end
- end
-
- -- a parlれた au vieux  pour la premiれそre fois et est en train de jouer
- if(self.state == 2) then
-  update_player()
-  update_smoke()
- 	update_flowers()
-  local w = win()
-  if(w) then
- 		g.niveau +=1
- 		init_flowers()
- 		g.mychar:init_pos(g.niveau)
- 	end
-  if g.niveau == 3 then
-   self.state = 3
-   d3:display()
-   init_fred()
-   g.mychar:init_pos(g.niveau)
-   g.mychar.state = 0
-   camera_follow_px()
-  end
- end
- -- le vieux parle au niveau 3
- if(self.state == 3) then
-  if(d_finished and btnp(5)) then
-   d_finished = false
-   d4:display()
-   self.state = 4
-  end
- end
- --bob parle
- if(self.state == 4) then
-  if(d_finished and btnp(5)) then
-   d_finished = false
-   d5:display()
-   self.state = 5
-  end
- end
- -- vieux parle
- if(self.state == 5) then
-  if(d_finished and btnp(5)) then
-   self.state = 6
-   d_finished = false
-  end
- end
- if(self.state == 6) then
-  camera_follow_px()
-  update_player()
-  update_smoke()
- 	update_flowers()
-  update_fred(3)
- end
-
-end
-
-
-player = {
- x = 0,
- y = 0,
- dx = 0,
- dy = 0,
- speed = 1,
- isgrounded = false,
-	jumpvel = 4.4,
-	walkaniml = {2,3},
-	walkanimr = {4,5},
-	stillaniml = {19},
-	stillanimr = {1},
-	flyaniml = {18},
-	flyanimr = {17},
-	state = 0,
-	prev = 0,
-	direc = 2, -- 1 -> droite 0 -> gauche
-	curranim = {19},
-	f = 1,
- water = 0,
-}
-
-pnj = {
- x = 0,
- y = 0,
- dx = 0,
- dy = 0,
- speed = 0.5,
- isgrounded = false,
-	jumpvel = 3.4,
-	walkaniml = {24,25},
-	walkanimr = {26,27},
-	stillaniml = {8},
-	stillanimr = {23},
-	flyaniml = {15},
-	flyanimr = {14},
-	state = 0,
-	prev = 0,
-	direc = 2, -- 1 -> droite 0 -> gauche
-	curranim = {8},
-	f = 1,
- fleur_localisee = {},
-
- col = 7+rnd(4),
-}
-function player:new(o)
- o = o or {}
- setmetatable(o, self)
- self.__index = self
- return o
-end
-
-function player:move_left()
- self.dx = - self.speed
- self.x += self.dx
- self.direc = 0
-end
-function player:move_right()
- self.dx = self.speed
- self.x += self.dx
- self.direc = 1
-end
-function player:jump()
- if(self.isgrounded) then
-  self.dy =-self.jumpvel
-  sfx(20)
- end
-end
-function player:hit_walls()
- local xoffset = 0
-	if self.direc == 1 then
-  xoffset = 7
-	end
-	local h = mget((self.x+xoffset)/8,(self.y+7)/8)
-	if fget(h,0) then return true
- else return false
- end
-end
--- fonction qui gれそre player.y et en passant l'aterrissage
-function player:fall ()
- if self.dy<5
-		then	self.dy += g.grav
-	end
-	--fall--
-	self.y += self.dy
-
-	--hit floor--
-	local v = mget(flr((self.x+4)/8),flr((self.y+8)/8))
-	self.isgrounded=false
-	if self.dy>=0 then
-		if fget(v,0) then
-			self.y = flr((self.y)/8)*8
-			self.dy=0
-			self.isgrounded = true
-		end
-	end
-end
-function player:set_state ()
- local ismoving = (btn(0) or btn(1))
- if(self.isgrounded) then
-		if not ismoving	then
-			if self.direc == 0 then
-				self.state = 1
-			else
-				self.state = 2
-			end
-		else
-			if self.direc == 0 then
-				self.state = 3
-			else
-				self.state = 4
-			end
-		end
-	-- pas sur le sol
-	else
-		if self.direc == 0 then
-			self.state = 5
-		else
-			self.state = 6
-		end
-	end
-end
-function player:anim_self()
- self:set_state()
- if self.state == 1 then
- 	self.curranim = self.stillaniml
- end
- if self.state == 2 then
- 	self.curranim = self.stillanimr
- end
- if self.state == 3 then
- 	self.curranim = self.walkaniml
- end
- if self.state == 4 then
- 	self.curranim = self.walkanimr
- end
- if self.state == 5	then
- 	self.curranim = self.flyaniml
- end
- if self.state == 6 then
- 	self.curranim = self.flyanimr
- end
-
- if(t==0) then
-		self.f=self.f%#self.curranim+1
-	end
-end
-function player:draw_self()
- spr(self.curranim[self.f],self.x,self.y,1,1)
- -- suite ici
- if(btn(4)) then
-  sfx(21)
-  if(self.direc == 0) then
-   spr(20,self.x-6,self.y,1,1)
-  else
-   spr(21,self.x+6,self.y,1,1)
-  end
- end
-
- if(not btn(4) and (self.state == 1 or self.state == 2)) then
-  if(self.direc == 0) then
-   spr(16,self.x - 6,self.y,1,1)
-  else
-   spr(32,self.x+6,self.y,1,1)
-  end
- end
-end
-function player:init_pos(niv)
-	if(niv ==0) then
-		camera(0,0)
-		self.x = 40
-		self.y = 96
-	end
-	if(niv == 1)then
-		camera(15*8,0)
-		self.x = 144
-		self.y = 88
-	end
-
-	if(niv == 2)then
-		camera(30*8,0)
-		self.x = 264
-		self.y = 40
-	end
-
-	if(niv == 3)then
-		camx = (69-7)*8
-  camy = 0
-		self.x = 69*8
-		self.y = 56
-	end
-end
-function player:move_player()
-  startx  =  self.x
- 	-----jump----
- 	if btnp(2) then
- 		self:jump()
- 	end
- 	-----walk----
- 	if btn(0) then
-   self:move_left()
- 	end
-
- 	if btn(1) then
-   self:move_right()
- 	end
- 	----hit walls----
-  -- ici erreur probable attention
-  if(self:hit_walls()) then
- 		self.x = startx
- 	end
-
- 	--grav, fall, hit floor--
- 	self:fall()
-  if btn(4) then
-   self:arrose()
-  end
-end
-function player:arrose()
-	make_smoke(self.x, self.y+4, 0.9,1,self.direc)
- self.water +=1
-end
-
-function pnj:new(o)
- o = o or {}
- setmetatable(o, self)
- self.__index = self
- return o
-end
-function pnj:move_left()
- self.dx = - self.speed
- self.direc = 0
-end
-function pnj:move_right()
- self.dx = self.speed
- self.direc = 1
-end
-function pnj:stop()
- self.dx = 0
-end
-function pnj:jump()
- if(self.isgrounded) then
-  self.dy =-self.jumpvel
-  sfx(20)
- end
-end
-
-function pnj:wall_ahead()
- local xoffset = -2
-	if self.direc == 1 then
-  xoffset = 9
-	end
-	local h = mget((self.x+xoffset)/8,(self.y+7)/8)
-	if fget(h,0) then return true
- else return false
- end
-end
-
-function pnj:hit_walls()
- local xoffset = 0
-	if self.direc == 1 then
-  xoffset = 8
-	end
-	local h = mget((self.x+xoffset)/8,(self.y+7)/8)
-	if fget(h,0) then return true
- else return false
- end
-end
-function pnj:fall ()
- if self.dy<5
-		then	self.dy += g.grav
-	end
-	--fall--
-	self.y += self.dy
-
-	--hit floor--
-	local v = mget(flr((self.x+4)/8),flr((self.y+8)/8))
-	self.isgrounded=false
-	if self.dy>=0 then
-		if fget(v,0) then
-			self.y = flr((self.y)/8)*8
-			self.dy=0
-			self.isgrounded = true
-		end
-	end
-end
-function pnj:set_state ()
- local ismoving = (self.dx != 0)
- if(self.isgrounded) then
-		if not ismoving	then
-			if self.direc == 0 then
-				self.state = 1
-			else
-				self.state = 2
-			end
-		else
-			if self.direc == 0 then
-				self.state = 3
-			else
-				self.state = 4
-			end
-		end
-	-- pas sur le sol
-	else
-		if self.direc == 0 then
-			self.state = 5
-		else
-			self.state = 6
-		end
-	end
-end
-function pnj:anim_self()
- self:set_state()
- if self.state == 1 then
- 	self.curranim = self.stillaniml
- end
- if self.state == 2 then
- 	self.curranim = self.stillanimr
- end
- if self.state == 3 then
- 	self.curranim = self.walkaniml
- end
- if self.state == 4 then
- 	self.curranim = self.walkanimr
- end
- if self.state == 5	then
- 	self.curranim = self.flyaniml
- end
- if self.state == 6 then
- 	self.curranim = self.flyanimr
- end
-
- if(t==0) then
-		self.f=self.f%#self.curranim+1
-	end
-end
-function pnj:draw_self(niv)
- pal(2,self.col)
- spr(self.curranim[self.f],self.x,self.y,1,1)
- pal()
-
-end
-function pnj:init_pos(niv)
-	if(niv ==0) then
-		self.x = 70*8
-		self.y = 7*8
-  self.direc = 0
-	end
-end
-function pnj:update_pos()
- self.x += self.dx
- self:fall()
- self.y += self.dy
-end
-
-function pnj:go_left()
- if(self:wall_ahead()==true) then
-  self:jump()
- else
-  self:move_left()
- end
-end
-function pnj:go_right()
- if(self:wall_ahead()==true) then
-  self:jump()
- else
-  self:move_right()
- end
-end
-function pnj:move_randomly()
- dice = flr(rnd(20))
- if dice==5 then
-  self:move_left()
- end
- if dice==6 then
-  self:move_right()
- end
- if(dice==7) then
-   self:stop()
- end
- if(self:wall_ahead()==true) then
-  self:jump()
- end
- if(self:hit_walls()) then
-  self:stop()
- end
-end
-function pnj:localise_fleur()
- local myflower = flowers[1]
- local thedist = 200
- for fleur in all(flowers) do
-  if(not fleur.fleuri) then
-   local dist = abs(self.x - fleur.x)
-   if(dist<thedist) then
-    thedist = dist
-    myflower = fleur
-   end
-  end
- end
- return myflower
-end
-function pnj:arrose()
- make_smoke(self.x, self.y+4, 0.9,1,self.direc)
-end
-function pnj:arrose_fleurs()
- if(self.fleur_localisee.fleuri)then
-  self.fleur_localisee = self:localise_fleur()
- end
- if(abs(self.x - self.fleur_localisee.x) > 9)then
-  if(self.x - self.fleur_localisee.x > 0) then
-   self:go_left()
-  else
-   self:go_right()
-  end
- else
-  self:stop()
-  if(self.x - self.fleur_localisee.x > 0) then
-   self.direc = 0
-  else
-   self.direc = 1
-  end
-  if self.fleur_localisee.fleuri == false then
-   self:arrose()
-  end
- end
-end
-
-g = {
-	grav = 0.6,
-	niveau = 0,
- mychar = {},
- fred = {},
- events = {},
- camx = 0,
- camy = 0,
- whotalk = 1,
-}
-
-function init_player()
- g.mychar = player:new()
-	g.mychar:init_pos(0)
-end
-
-function update_player()
-	g.mychar:move_player()
-	g.mychar:anim_self()
-end
-
-function draw_player()
- g.mychar:draw_self()
-end
-
-function init_fred(niv)
- g.fred = pnj:new()
- g.fred:init_pos(0)
- g.fred.fleur_localisee = g.fred:localise_fleur()
-end
-
-function update_fred(niv)
- g.fred:update_pos()
- g.fred:anim_self()
- if(niv == 3) then
-  g.fred:arrose_fleurs()
- end
-end
-function draw_fred(niv)
- g.fred:draw_self()
-end
-
-
--->8
--- shmoke
-
-function make_smoke(x,y,init_size,col,direction)
-	local s = {}
-	s.x = x
-	s.y = y
-	s.col = col
-	s.width = init_size
-	s.t = 0
-	s.max_t =  30+ rnd(15)
-	if(direction == 0)then
-		offset = -1
-	 s.dx = -1 - rnd(1) + player.dx
-	else
-		offset = 8
-		s.dx = 1 + rnd(1) + player.dx
-	end
-	s.x += offset
-	s.dy = -0.5 + rnd(.1)
-	s.ddy = .1
-	add(smoke,s)
-	return s
-end
-
-function initsmoke()
-	smoke = {}
-	cursorx = 50
-	cursory = 50
-	color = 1
-end
-
-
-function move_smoke(sp)
-	v = mget(sp.x/8,sp.y/8)
-
-	if (fget(v,0)) then
-		del(smoke,sp)
-	end
-
-
-
-	sp.x = sp.x + sp.dx
-	sp.y = sp.y+sp.dy
-	sp.dy = sp.dy + sp.ddy
-	sp.t = sp.t+1
-end
-
-function update_smoke()
-	foreach(smoke, move_smoke)
-
-end
-
-
-
-function draw_particle(s)
-	circfill(s.x,s.y,s.width,s.col)
-end
-
-function draw_smoke()
-	foreach(smoke, draw_particle)
-end
-
-
------- clair et net
-
--->8
--- flowers!
-flowsprites = {}
-sprites1 = {48,49,50}
-sprites2 = {56,57,58}
-flowsprites[1] = sprites1
-flowsprites[2] = sprites2
-
-function init_flowers()
- nbfleuri = 0
- wait = false
- ticks = 0
-	flowers = {}
- local offsett = 0
- if(g.niveau == 3) then offsett = 45*8 end
-	for i=g.niveau*15,15*g.niveau+15 + offsett,1 do
-		for j=0,15,1 do
-			-- fleurs basiques
-			if(fget(mget(i,j),2))then
-				if(flr(rnd(5))>1) then
-					make_flowers(i*8,j*8,1)
-				end
-			end
-			--fleurs plateformes
-			if(fget(mget(i,j),3))then
-				make_flowers(i*8,j*8,2)
-			end
-		end
-	end
-end
-
-function make_flowers(x,y,t)
-	local flow = {}
-	flow.x = x
-	flow.y = y
-	flow.arrose = 0
-	flow.fleuri = false
-	flow.f = 0
-	flow.currsprite = 48
-	flow.col = rnd(9)
-	flow.type = t
-	add(flowers,flow)
-	return flow
-
-end
-
-function testarrose(flower)
-	for w in all(smoke) do
-		local wx,wy = w.x/8,w.y/8
-		if flr(wx) == flr(flower.x/8) and flr(wy) == flr(flower.y/8)
-		then
-			if flower.arrose == 75 then
-				nbfleuri +=1
-				flower.arrose+=1
-				if(flower.type == 2) then
-					mset(flower.x/8,flower.y/8,59)
-				end
-			end
-			flower.arrose +=1
-		end
-	end
-end
-
-function anim_flower(flower)
-	if flower.arrose >75 and not flower.fleuri then
-	 if(t==0)then
-			flower.f+=1
-		end
-	end
-	if flower.f >= 2 then
-		flower.fleuri = true
-	end
-
-end
-
-function draw_flower(flower)
-	flower.currsprite = flowsprites[flower.type][flower.f+1]
-	pal(7,flower.col)
-	spr(flower.currsprite,flower.x,flower.y,1,1)
-	pal()
-end
-
-function update_flowers()
-	foreach(flowers,testarrose)
-	foreach(flowers,anim_flower)
-end
-
-function draw_flowers()
-	foreach(flowers,draw_flower)
-end
-
-function win()
-	if nbfleuri == #flowers and g.niveau<=2 then
-		sfx(21)
-		nbfleuri +=1
-		wait = true
-	end
-
-	if(wait == true) then
-		ticks += 1
-		if(ticks > 60) then
-			wait = false
-			ticks = 0
-			return true
-		end
-	end
-	return false
-
-end
--->8
--- dialogues
-function dtb_init(n) dtb_p = {0,0} dtb_q={}dtb_f={}dtb_n=3 if n then dtb_n=n end _dtb_c() end
-
-
-
-dialogue = {
- x = 0,
- y = 0,
- col = 1,
- texte = "",
- last_one = false,
- running = false,
- finished = false,
- showx = false,
-}
-function dialogue:new(o,xx,yy,t,c)
- o = o or {x = xx, y = yy, texte = t,col = c}
- setmetatable(o, self)
- self.__index = self
- return o
-end
-
-function dialogue:triggered()
- local dist = abs(self.x - g.mychar.x)
- if (dist < 16 ) then
-  if(not self.running) then self.showx = true  end
-  if(btnp(5)) then
-   self.running = true
-   self.showx = false
-   return true
-  else
-   return false
-  end
- else
-  self.running = false
-  self.showx = false
-  return false
- end
-end
-function dialogue:display()
- g.whotalk = self.col
-  dtb_disp(self.texte,{self.x,self.y-16})
-  
-end
-
-function dialogue:draw()
-	if(self.showx) then spr(22,self.x,self.y - 8, 1, 1,2) end
-end
-
-function dtb_disp(t,p,c)
-local s,l,w,h,u s={}l=""w=""h=""u=function()
-dtb_p = p
-if #w+#l>24 then add(s,l)l=""end l=l..w w=""end for i=1,#t do h=sub(t,i,i)w=w..h if h==" "then u()elseif #w>28 then w=w.."-"u()end end u()if l~=""then add(s,l)end add(dtb_q,s)if c==nil then c=0 end add(dtb_f,c)end function _dtb_c()dtb_d={}for i=1,dtb_n do add(dtb_d,"")end dtb_c=0 dtb_l=0 end function _dtb_l()dtb_c+=1 for i=1,#dtb_d-1 do dtb_d[i]=dtb_d[i+1]end dtb_d[#dtb_d]=""sfx(21)end function dtb_update()if #dtb_q>0 then if dtb_c==0 then dtb_c=1 end local z,x,q,c z=#dtb_d x=dtb_q[1]q=#dtb_d[z]c=q>=#x[dtb_c]if c and dtb_c>=#x then if btnp(5) then if dtb_f[1]~=0 then dtb_f[1]()end del(dtb_f,dtb_f[1])del(dtb_q,dtb_q[1])_dtb_c()sfx(20)return end elseif dtb_c>0 then dtb_l-=1 if not c then if dtb_l<=0 then local v,h v=q+1 h=sub(x[dtb_c],v,v)dtb_l=1 if h~=" " then sfx(20)end if h=="." then dtb_l=6 end if h=="_" then d_finished = true end dtb_d[z]=dtb_d[z]..h end if btnp(4) then dtb_d[z]=x[dtb_c]end else if btnp(5) then _dtb_l()end end end end end
-
-function dtb_draw() local x = dtb_p[1] local y = dtb_p[2] if #dtb_q>0 then local z,o z=#dtb_d o=0 if dtb_c<z then o=z-dtb_c end if dtb_c>0 and #dtb_d[#dtb_d]==#dtb_q[1][dtb_c] then print("\x97",118,120,1)end for i=1,z do print(dtb_d[i],x,y+ i*8 -(z+o)*8,g.whotalk)end end end
-
-
-
-function create_txt(xx,yy,niveau,txt)
-	local niv = niveau+1
-	local l = {}
-	l.x = xx
-	l.y = yy
-	add(locs,l)
-	add(textes,txt)
-end
-
-function init_dials()
- d_finished = false
-	talking = false
-	locs = {}
-	textes = {}
-	vx = 0
-	vy = 0
-	dtb_init(2)
-	d1 = dialogue:new(nil,16,96,"bobby. arrose mes fleurs,veux-tu? j'ai trop mal au dos!_",7)
-	d2 = dialogue:new(nil,264,72,"je t'ai a l'oeuil_",7)
- d3 = dialogue:new(nil,66*8,5*8,"bon, je vais t'aider! t'es mou!_",7)
- d4 = dialogue:new(nil,64*8,5*8,"et ton dos?_",8)
- d5 = dialogue:new(nil,66*8,5*8,"on s'en fiche! fort boyard commence dans 10 min! celui qui arrose le plus de fleurs a le fauteuil!_",7)
- dials = {d1,d2,d3,d4}
-end
-
-function update_txt()
-	dtb_update()
-end
-
-
-function draw_txt()
-	dtb_draw()
-	for d in all(dials )do d:draw() end
-end
-
--->8
+    function vec:__add(b)  return v(self.x+b.x,self.y+b.y)end
+    function vec:__sub(b)  return v(self.x-b.x,self.y-b.y)end
+    function vec:__div(d)  return v(self.x/d,self.y/d)end
+    function vec:__mul(m)  return v(self.x*m,self.y*m) end
+    function vec:__len()    return (sqrt(self.x^2+self.y^2)) end
+    function vec:__peek()   return self/#self end -- normalize
+    function vec:__or(m) if (#self>m) then return  @self*m else return self end end
+    function vec:to_block() return {self.x\8,self.y\8} end
+    function v(x,y)      return setmetatable({x=x,y=y or 0,},vec)end
+--
+
+--
+water = {}
+    function addwater(x,y,dir,spd)
+        w={s=0.9,x=x,y=y+rnd(1),dx= (dir and -0.8+spd.x) or 0.8+spd.x,  dy=-rnd(0.3),pat=flr(rnd(1))}
+        p = {░}
+        r=rnd(1)
+        if(r>0.8)then p={▥}end
+        w.pat = p[w.pat+1]-->>flr(rnd(2))
+        w.dx += 0.3 - rnd(0.6)
+        add(water,w)
+    end
+
+    function update_water()
+        for w in all(water)do
+            w.dy += 0.17
+            w.y+=w.dy
+            --w.s +=0.05
+            w.x+=w.dx
+            if(fget(mget(w.x\8,w.y\8),1)) then del(water,w)end
+            -- todo: flowers lookup table per level 
+        end
+    end
+    function draw_water( )
+        for w in all(water)do
+            --fillp(w.pat)
+            circ(w.x,w.y,w.s,1)
+            fillp()
+        end
+    end
+
+
+-- motion functions (--> move to character class?)
+---------------------------------------
+    function go_left(p) 
+        if(p.spd.x < p.maxspd) then p.spd.x +=0.2 end
+        --p.offset = p.clop*cos(4*t()+ p.phase)
+    end
+    function go_right(p)
+        if(p.spd.x >-p.maxspd) then p.spd.x -=0.2 end
+        --p.offset = p.clop*cos(4*t()+ p.phase)
+    end
+    function stop(p)
+        if(p.grounded) then 
+            if(abs(p.spd.x)>0.5) then p.spd.x -= (p.spd.x/abs(p.spd.x))*0.3 else p.spd.x = 0 end
+        else
+            if(abs(p.spd.x)>0.5) then p.spd.x -= (p.spd.x/abs(p.spd.x))*0.1 else p.spd.x = 0 end
+        end
+        p.offset = 0
+    end
+    function go_down(p)
+        if(p.climbing) then 
+            p.spd.y = 1
+            return
+        end
+    end
+    function go_up(p)
+        if(p.climbing) then 
+            p.spd.y = -1
+            return
+        end
+        if(p.grounded)then
+            p.spd.y -= 3
+        end
+
+    end
+--
+
+-- classes + spawning function
+---------------------------------------
+    entities = {}
+    inheritance = {
+        ['character']='object',
+        ['player']='character',
+        ['something']='object'
+    }
+
+    -- todo state, anim_number, DT
+    local entity_classes = {
+
+        ['object']={ --3 objet physique
+            -- required: vectors, GRAVITY, states(STILL), time,c?
+            function(self)
+                self:draw_sprite()
+            end,nil,
+
+            draw_sprite = function(self,do_blackline)
+
+                local anim_list = self.sprites[self.state]
+                local ox,oy =  (self.width/2 + self.bx ),   (  self.height/2 + self.by)
+                blackline(anim_list[self.frame],self.pos.x - ox,self.pos.y- oy + self.offset,1,1,self.direction,1)
+                spr(anim_list[self.frame],self.pos.x -ox,self.pos.y-oy + self.offset,1,1,self.direction)
+
+            end,
+
+            collide_floor = function(self)
+                --only check for ground when falling.
+                if self.spd.y<0 then return false end
+
+                for i=-(self.width/3),(self.width/3),2 do
+                    local tile = mget((self.pos.x+i)/8,(self.pos.y +self.spd.y+ (self.height/2))/8)
+                    if(fget(tile,0)) then
+
+                        self.pos.y = flr((self.pos.y+self.spd.y+(self.height/2))/8 )*8 - self.height/2
+                        self.grounded = true
+                        self.spd.y = 0
+                        
+                        return true
+                    end
+                end
+                return false
+            end,
+            collide_ceiling = function(self)
+                --only check for ceiling when jumping.
+                if self.spd.y>0 then return false end
+
+                for i=-(self.width/3),(self.width/3),2 do
+                    local tile = mget((self.pos.x+i)/8,(self.pos.y +self.spd.y- (self.height/2))/8)
+                    if(fget(tile,2)) then
+
+                        self.pos.y = flr((self.pos.y+self.spd.y-(self.height/2))/8 )*8 +8+ (self.height)/2
+                        self.spd.y = 0
+                        return true
+
+                    end
+                end
+                return false
+            end,
+            collide_walls = function(self)
+
+                local offset = self.width/2 
+
+                for i=-(self.height/3),(self.height/3),2 do
+                    local tile = mget((self.pos.x+self.spd.x+(offset))/8,(self.pos.y+i)/8) 
+                    
+                    if(fget(tile,2)) then
+                        --self.spd.x=0
+                        self.pos.x = (flr(((self.pos.x+self.spd.x+(offset))/8))*8) - (offset)
+                        self.walled = true
+                        return true
+                    end
+
+                    local tile = mget((self.pos.x+self.spd.x-(offset))/8,(self.pos.y+i)/8) 
+                    if(fget(tile,2)) then
+                        --self.spd.x=0
+                        self.pos.x = (flr(((self.pos.x+self.spd.x-(offset))/8))*8) +8+ (offset)
+                        self.walled = true
+                        return true
+                    end
+                end
+                return false
+            end,
+            on_block = function(self,flag)
+                local t1,t2,t3,t4 = 
+                mget((self.pos.x-self.width/2)/8,(self.pos.y-self.height/2)/8),
+                mget((self.pos.x+self.width/2)/8,(self.pos.y-self.height/2)/8),
+                mget((self.pos.x-self.width/2)/8,(self.pos.y+self.height/2)/8),
+                mget((self.pos.x+self.width/2)/8,(self.pos.y+self.height/2)/8)
+
+                if(fget(t1) & fget(t2) & fget(t3) & fget(t4) & flag !=0 ) then return true end
+
+                return false
+            end,
+            fall = function(self) 
+                if(self.spd.y<self.maxyspd) then
+                    self.spd.y += GRAVITY 
+                end
+            end,
+            collide = function(self) -- wraps collision checks on world map
+                if not self:collide_floor() then self.grounded = false end
+                if not self.grounded then self:collide_ceiling() end
+                if not self:collide_walls() then self.walled = false end     
+            end,
+            apply_world_physics = function(self) -- wraps collisions and gravity
+                self:fall()
+                self:collide()
+            end,
+            update_pos = function(self) -- updates self.pos vector         
+                if(not self.walled) self.pos.x+= self.spd.x 
+                self.pos.y += self.spd.y
+            end,
+            update_frame = function(self) -- updates self.frame
+                if(time%self.sprites[self.state].rate == 0) then 
+                    self.frame = (self.frame % (#(self.sprites[self.state])) ) +1 
+                end
+                if(self.sprites[self.state][self.frame]==nil)then self.frame=1 end
+            end,
+            grounded = false, walled = false,
+            maxspd = 1, maxyspd = 4, offset = 0, 
+            state = STILL, clop=0.5,
+            height=8,width=6,bx=2,by=0,
+            spd = v(0,0), acc=v(0,0), finpos = v(0,0), pos=v(0,0),
+            frame=1,sprites={{rate=0,1}}
+        }, -- ok
+
+        ['character']={ --2  character  
+            -- require: blackline 
+            function(self) -- draw()
+                self.watering = self.controller&(1<<4) != 0
+                dx = (self.direction and -1) or 1 
+                oy = (self.watering and 0) or 1
+                ox = (self.watering and 4*dx) or 2*dx
+                
+                --blackline(44,self.pos.x - (self.width/2) - 3 +  dx + ox,self.pos.y-self.height/2-3 + oy,1,1,self.direction,1)
+                spr(44,self.pos.x - (self.width/2) - 3 +  dx + ox,self.pos.y-self.height/2-3 + oy,1,1,self.direction)
+                self:draw_sprite()      
+
+            end,
+
+            function(self) -- update()
+                self:do_action()
+                self:move()
+                self:apply_world_physics()
+                self:update_pos()
+                
+                self:set_state()
+                self:update_frame()
+            end,
+
+            init = function(self)
+                self.sprites = {self.a_running,self.a_still,self.a_running,self.a_running,self.a_running,self.a_inair2,self.a_climbing,self.a_inair1,self.a_talking}
+                self.phase = rnd(1)
+                add(self.act_queue,self.control)
+            end,
+            set_state = function(self)
+                if(self.spd.x<0) then 
+                    self.state = RUNNING_R
+                    if(self.controller==1) then
+                        self.direction = RIGHT
+                    end
+                end
+                if(self.spd.x>0) then 
+                    self.state = RUNNING_L
+                    if(self.controller==2) then
+                        self.direction = LEFT
+                    end
+                end
+                if(not self.grounded ) then 
+                    if(self.climbing)then self.state = CLIMBING else
+                        if(self.spd.y>0) then
+                        self.state = IN_AIR_1
+                        else self.state = IN_AIR_2 end
+                    end
+                end
+                if(self.spd.x == 0 and self.grounded) then self.state = STILL end
+                if(self.talking) self.state=TALKING 
+            end,
+
+            move = function(self)
+                if(not self.climbing) then
+                    for i=0,4 do 
+                        if( (self.controller >> i) & 1 == 1) then self.moves[i+1](self) end 
+                    end
+                else
+                    for i=2,4 do 
+                        
+                        if( (self.controller >> i) & 1 == 1) then self.moves_climbing[i+1](self) end 
+                    end
+                    if(self.controller & 12 == 0 ) then self.spd.y = 0 return end
+                    if(self.controller & 3 == 0 ) then stop(self) end
+                end
+            end,
+
+            apply_world_physics = function(self)
+                if(not self.climbing) then
+                    self:fall()
+                    self:collide()
+
+                    local monte_sur_une_echelle = (self:on_block(2) and (self.controller & 12 != 0))
+
+                    if(monte_sur_une_echelle) then 
+                        self.climbing = true 
+                        self.pos.x = flr((self.pos.x+self.width/2)\8 )*8 +self.width/2 +1
+                        self.spd.x=0
+                        self.grounded = false
+                    end
+                else
+                    self:climb()
+                end
+            end,
+
+            climb=function(self)
+                local tile1=mget((self.pos.x+2)/8,(self.pos.y)/8)
+                local tile2=mget((self.pos.x+2)/8,(self.pos.y+self.spd.y+(9))/8)
+
+                if(not fget(tile1,1)) then
+                    self.pos.y = flr((self.pos.y-1)/8 )*8 + 8
+                    if( (on_ground) and (self.controller & 3 != 0)) then self.climbing = false end
+                    --return
+                end
+                if(not fget(tile2,1)) then
+                    self.pos.y = flr((self.pos.y+4)/8 )*8 
+                    --return
+                end
+                if(not (self.controller & 12 != 0) and fget(tile2,0) and (self.controller & 3 != 0)) then 
+                    self.climbing = false 
+                end
+
+            end,
+
+            aim_move = function(self,button) self.controller |= (1<<button) end,
+            do_action = function(s) -- call the first function in the action stack, if it returns true then del
+                if(#s.act_queue != 0) then   
+                    local a = s.act_queue[#s.act_queue]
+                    if(a(s)) then del(s.act_queue,a)end
+                end
+            end,
+
+            control = function(s)
+                if(time%10==0)then
+                    
+                    s.controller=0
+                    stop(s)
+                    local r=rnd(1)
+                    if(r>0.8) then s:aim_move(flr(rnd(5)))end
+                end
+            end,
+
+            moves = {go_right,go_left,go_up,go_down,
+            function(s)
+                addwater(s.pos.x - (s.width/2) +  dx*5 + ox+0.7,s.pos.y-s.height/2 +1,s.direction,s.spd)
+            end
+            },
+            moves_climbing = {nil,nil,go_up,go_down,function(self)self.climbing=false end},
+            act_queue = {},
+            -- animations:
+            -- premier element du tab = "vitesse" de l'animation, reste = les frames.
+            a_running = {rate=a_MEDIUM,2,24,23,39,55,40,56},
+            a_still = {rate=a_SLOW,9,25},
+            a_inair1 = {rate=0,23},a_inair2 = {rate=0,41},
+            a_climbing = {rate=a_MEDIUM,54,38,54,22},
+            a_talking = {rate=a_MEDIUM,9,26},
+
+            controller = 0,
+            climbing = false,talking=false,watering=false,
+            height=7,width=4,bx=3,by=1
+
+        },
+
+        ['player']={ --5 player (extends character)
+            nil,nil,
+            control = function(self)
+                self.controller = 0
+                for i=0,5 do
+                    if(btn(i,self.gamepad_nb)) then self:aim_move(i) end
+                end
+                if(not btn(0,self.gamepad_nb) and not(btn(1,self.gamepad_nb))) then stop(self) end
+            end,
+            gamepad_nb=0
+        },
+        ['joe']={
+
+        },
+        ['flower']={
+            function(self)end,function(self)end,
+            init=function(self)
+                self.color=rnd(15)
+                mset(x\8,y\8,48)
+            end,
+            bloom=false,color=7,pos=v(0,0)
+        }
+    }
+
+    function new_entity(class_id,args,skip_init)
+        local entity
+        local parent = inheritance[class_id]
+        local its_class = entity_classes[class_id]
+
+        if(parent != nil) then
+            entity = new_entity(parent,args,true)
+        else
+            -- entite par defaut
+            entity = { draw=nul, update=nul, init=nul, action=nul }
+        end
+        for k,val in pairs(its_class)do
+            if(type(val) == "table") then -- if val is a table, copy it (if we don't do this, it will just put the reference)
+                local copy = {}
+                for o_k, o_v in pairs(val) do copy[o_k] = o_v end 
+                entity[k] = copy
+            else 
+                entity[k] = val 
+            end
+        end
+        for k,v in pairs(args or {}) do -- add properties from the arguments
+            entity[k]=v
+        end
+        entity.draw,entity.update=its_class[1] or entity.draw,its_class[2] or entity.update
+        if(not skip_init) then  entity:init() end
+        return entity
+    end
+--
+
+--####################################
+--####################################
+joe=new_entity('character',{
+    pos=v(30,10),
+    a_still={rate=a_MEDIUM,17},
+    a_running={rate=a_SLOW,18,19},
+    a_inair1={rate=a_MEDIUM,20},
+    a_inair2={rate=a_MEDIUM,21}
+    })
+p=new_entity('player',{
+    pos=v(50,10),
+    a_still={rate=a_MEDIUM,1},
+    a_running={rate=a_SLOW,2,3},
+    a_inair1={rate=a_MEDIUM,4},
+    a_inair2={rate=a_MEDIUM,5}
+    })
+
+
+add(entities,joe)
+add(entities,p)
+
+
+
+
+
+------
+
+
 -- init update draw
-function _init()
- music(0)
-	transition = true
- game1 = game:new()
- init_flowers()
-	init_player()
- init_fred(0)
-	initsmoke()
-	init_dials()
-	init_transition()
-
-	t=0
-
-end
+--####################################
 
 function _draw()
-	cls()
- rectfill(0,0,1024,1024,12)
-	map()
-	draw_smoke()
-	draw_player()
- draw_fred(g.niveau)
-	draw_flowers()
-	draw_txt()
+    cls(7)
+    
+    --rectfill(0,0,126,10,1)
+    --rectfill(0,40,126,50,7)
+    	
+	line(0,8,128,8,12)	
+	rectfill(0,11,128,14,12)   
+    rectfill(0,16,128,100,12)
+	--line(0,80,128,80,14)
+	
+	--rectfill(0,85,128,128,14)
 
-	if(transition) then
-		do_transition()
-	end
+   -- rectfill(0,60,126,100,15)
+    map()
+    for e in all(entities) do e:draw()end
+    draw_water()
+    
 end
 
 function _update()
- game1:update()
- update_txt()
+    for e in all(entities) do e:update()end
 
-	t=(t+1)%3
-
-end
-
-
--->8
-function init_transition()
-	circ_rad = 10
-	u = 2.6
-end
-function do_transition()
-	u+= 0.04
-	for i=0,8 do
-		for j = 0,8 do
-			local osc2 = sin(u/4+j*0.03)
-			circfill(i*16,j*16,osc2*15,0)
-		end
-	end
-	if(u >= 4) then transition = false end
-
+    update_water()
+    time=time%100 +1
 end
 
 __gfx__
 00000000005555000055550000555500005555000055550000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000055555555555555555555555555555555555555550ffff00000000000000ffff0000000000000000000000000000000000000000000ffff0000ffff00
-007007000068f80000f8660000f8660000668f0000668f000f8f8000000000000008f8f0030000000000000003000000030000003000300000ff8f0000f8ff00
-0007700000ffff0000ffff0000ffff0000ffff0000ffff000f7f7000200220020007f7f0030000000033000003000000030000000303000000ff7f0000f7ff00
-000770000222220000222200002222000022220000222200057770406dd26dd2040777500333000003003000033300000333000000300000f05777000077750f
-00700700f0111100001f20000011f2000002f100002f1100517775f0200220020f57771503030000030030000303000003030000003000000517710000177150
-000000000010010001001100001010000011001000010100f11110406dd26dd20401111f03330000003300000333000003330000003000000010001001000100
-00000000009009000900090000909000009000900009090009009040200220020409009000000000000000000000000000000000000000000900009009000090
-00000000005555000055550000555500000000000000000002222200000000000000000000000000000000000000000000000000000000000000000000000000
-000000005555555555555555555555550000000000000000200000200ffff00000ffff0000ffff0000ffff0000ffff00000000000ffff0400ffff00000000000
-0000000000668f0000f86600008f86000000000000000000202220200f8f800000f8ff0000f8ff0000ff8f0000ff8f00000000000f8f80f00f8f804000000000
-0000000002ffff0000ffff2200ffff000000e800008e0000200020200f7f700000f7ff0000f7ff0000ff7f0000ff7f00000000000f7f75400f7f70f000000000
-00000000f02222000022220f0022222000000f2222f0000020222020057770400077450000775450005477000545770000000000057870400577754000000000
-0000000f00111110011111000011110f000008000080000020000020517775f00077f50000771f50005f770005f1770000000000517770405177704000000000
-00000000911000100100011900100100000000000000000002222200f11110400100410000101400001400100041010000000000f1111000f111104000000000
-00000000000000900900000000900900000000000000000000000000090090400900490000909400009400900049090000000000090090000900900000000000
+00000000555555555555555555555555555555555555555500000000000000000000000000000000000000000000000000000000000000000000000000000000
+007007000068f80000668f0000668f0000668f0000668f0000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0007700000ffff0000ffff0000ffff0002ffff00f2ffff0000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000022222000022220000222200f02222000022220000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700f01111000002f100002f1100001111000011110000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000001001000011001000010100911000100011010000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000009009000090009000090900000000900900090000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000ffff00000ffff0000ffff0000ffff000ffff0000ffff040000000000000000000000000000000000000000000000000000000000000000000000000
+000000000f8f800000ff8f0000ff8f0000ff8f000f8f80400f8f80f0000000000000000000000000000000000000000000000000000000000000000000000000
+2f0000000f7f700000ff7f0000ff7f0000ff7f000f7f70f00f7f7540000000000000000000000000000000000000000000000000000000000000000000000000
+00000000057770400054770005457700f05777000577754005787040000000000000000000000000000000000000000000000000000000000000000000000000
+00000000517775f0005f770005f17700051771005177704051777040000000000000000000000000000000000000000000000000000000000000000000000000
+00000000f1111040001400100041010000100010f1111040f1111000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000090090400094009000490900090000900900900009009000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000333333330aaa5aa04444444444444444333333333333330033333333003333333b444444444444444444444400000000000000000000000000000000
-00000000bbbbbbbbaaaaaaaa4444444444444444bbbbbbbbbbbbbb30bbbbbbbb03bbbbbbb4444444444444444444444400000000000000000ffff04000000000
-0000000044444444aa5aaa5a4444444454444444544444b444444bb3444444443b4444b444444444444444444444444400000dd0000000000f8f80f000000000
-00000000444445545aaaaaaa444444444444444444444444444444b3444444443b4444444444444454444444444444450000d00d000000000f7f754000000000
-0000000044444444aaaaaaaa444444444444444444444444444444b3444544443b4444444444444404444444444444400600d00d000000000578704000000000
-f000000045555444aaaaaaaa44444444444444454444444544444bb3444444443b44444444444444054444444444445000d0dccd000000005177704000000000
-0000000045555444aa5aaaaa44444444444444444444444444544bb3444444443b44444444444444005444444444450000dddddd00000000f111100000000000
-00000000444444440aaaaa50444444444444444444444444444444b3444444443bb44444444444440000544444450000000ddddd000000000900900000000000
+00000000bbbbbbbbaaaaaaaa4444444444444444bbbbbbbbbbbbbb30bbbbbbbb03bbbbbbb4444444444444444444444400000000000000000000000000000000
+0000000044444444aa5aaa5a4444444454444444544444b444444bb3444444443b4444b444444444444444444444444400000000000000000000000000000000
+00000000444445545aaaaaaa444444444444444444444444444444b3444444443b4444444444444454444444444444450000000000d000000000000000000000
+0000000044444444aaaaaaaa444444444444444444444444444444b3444544443b444444444444440444444444444440000000000d0d00600000000000000000
+f000000045555444aaaaaaaa44444444444444454444444544444bb3444444443b44444444444444054444444444445022fd00600d0d0d000000000000000000
+0000000045555444aa5aaaaa44444444444444444444444444544bb3444444443b44444444444444005444444444450000dddd000ddddd000000000000000000
+00000000444444440aaaaa50444444444444444444444444444444b3444444443bb44444444444440000544444450000000dd0000dddd0000000000000000000
 00000000000000000000000000000000000b00000000000000000000000000000000000000077700007777700000000000000000000000000000000000000000
 000000000000000000000000000000000000b030000000000000000000000000000000000003a3000003a3000000000000000000000000000000000000000000
 000000000000700000077000000000000000b330000000000000000000000000000373000000b0000030b0300000000000000000000000000000000000000000
-000aa000007aa000007aa700000000000000b3000000000000000000000000000000a0000000b0000000b0000000000000000000000000000000000000000000
-000aa000000aa700007aa700000000000000b0000030000000000030000000000000b0000000b0000000b0000000000000000000000000000000000000000000
-0000b0000007b0000007700000000000000b00000330000000000030000000000000b000000bb000000bb0000000000000000000000000000000000000000000
-000b0000000b0000000b000000000000000b00000b0003000003003000000000000bb000000b0000000b00000000000000000000000000000000000000000000
-000b0000000b0000000b000030b00b03000b0000333b33b3bbbb333333000303000b0000000b0000000b0000b00b00b000000000000000000000000000000000
+000aa000007aa000007aa700000000000000b3000000000000000000000000000000a0000000b0000000b0000000000000000000200220020000000000000000
+000aa000000aa700007aa700000000000000b0000030000000000030000000000000b0000000b0000000b00000000000000000006dd26dd20000000000000000
+0000b0000007b0000007700000000000000b00000330000000000030000000000000b000000bb000000bb0000000000000000000200220020000000000000000
+000b0000000b0000000b000000000000000b00000b0003000003003000000000000bb000000b0000000b000000000000000000006dd26dd20000000000000000
+000b0000000b0000000b000030b00b03000b0000333b33b3bbbb333333000303000b0000000b0000000b0000b00b00b000000000200220020000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+03000000000000000300000003000000300030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+03000000003300000300000003000000030300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+03330000030030000333000003330000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+03030000030030000303000003030000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+03330000003300000333000003330000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1036,191 +638,23 @@ f000000045555444aaaaaaaa44444444444444454444444544444bb3444444443b44444444444444
 0000000000000000000000000000000000000000000000003330b303330004444400333300b00330000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000333b33330000400040033333bb33300000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000003333300000400040003333b033300000000000000000000000000000000000000000000000000
-__label__
-ccc22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22c22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-2cc22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22c22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-ccc22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222ccccccccccccccccccccccccc3ccccccccccccccccccccccccccccccc3ccccccccccccccc3cccccccccccccc3ccc3ccccccccccccccccccc22222222
-22222222ccccccccccccccccccccccccc3cccccccccccccccc33ccccccccccccc3ccccccccccccccc3ccccccccccccccc3c3cccccccccccccccccccc22222222
-22222222ccccccccccccccccccccccccc333ccccccccccccc3cc3cccccccccccc333ccccccccccccc333cccccccccccccc3ccccccccccccccccccccc22222222
-22222222ccccccccccccccccccccccccc3c3ccccccccccccc3cc3cccccccccccc3c3ccccccccccccc3c3cccccccccccccc3ccccccccccccccccccccc22222222
-22222222ccccccccccccccccccccccccc333cccccccccccccc33ccccccccccccc333ccccccccccccc333cccccccccccccc3ccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc5555ccccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222ccccccccccccccccccccccccccccccccccccccccccccccccccccccc55555555ccccccccccccccccccccccccccccccccccccccccccccccccc22222222
-22222222ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc68f8cccccccccccccccccccccc77ccccccccccccccccccccccccccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccccffffccccccccccccccccccccc7aa7cccccccccccccaaccccccaaccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccc22222ccccccccc3ccccccccccc7aa7cccccccccccccaac3ccc3aaccc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccfc1111fcccccccc3cccccccccccc77cccccccccccccccbc3cc33cbccc22222222
-22222222ccccccccccccccccccccccccccccccccccccccccccccccccccccccccc1cc1cccccc3cc3ccccccccccccbcccccccccccccccbcc3ccbcbc3cc22222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccc39cc93c3bbbb333333ccc3c333cbc3c333ccc3c3bbbb3333333b33b322222222
-22222222cccccccccccccccccccccccccccccccccccccccccccccccccccccccc3333333333333333333333333333333333333333333333333333333322222222
-22222222cccccccccffffcccccccccccccccccccccccccccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb22222222
-22222222cccccccccf8f8cccccccccccccccccccccc44cccccccccccccc33ccc2222222222222222222222222222222222222222222222222222222222222222
-22222222cccccccccf7f7ccccccccccccccccccccc4aa4cccccccccccc3aa3cc2222222222222222222222222222222222222222222222222222222222222222
-22222222ccccccccc5777c4ccccccccccccccccccc4aa4cccccccccccc3aa3cc2222222222222222222222222222222222222222222222222222222222222222
-22222222cccccccc517775fcccccccccccccccccc3344cccccccccccccc33ccc2222222222222222222222222222222222222222222222222222222222222222
-22222222ccccccccf1111c4ccccccccccccccccccbcbc3cccccccccccccbcccc2222222222222222222222222222222222222222222222222222222222222222
-22222222ccccccccc9cc9c4ccccccccc33ccc3c3333b33b333ccc3c333cbc3c32222222222222222222222222222222222222222222222222222222222222222
-22222222333333333333333333333333333333333333333333333333333333332222222222222222222222222222222222222222222222222222222222222222
-22222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-
 __gff__
-0000000000000000020000000000000000000000000000020000000000020200000101010101010101000000000202000000000800040404040000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000700070000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
-2300000000000000000000000000002300000000000000000000000000002300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000023000000000000000000000000000000000000000000
-2300000000000000000000000000002300000000000000000000000000002300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000023000000000000000000000000000000000000000000
-2300000000000000000000000000002300000000000000000000000000002300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000023000000000000000000000000000000000000000000
-2300000000000000000000000000002300000000000000000000000000002300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000023000000000000000000000000000000000000000000
-2300000000000000000000000000002300000035350707363536353637372300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000023000000000000000000000000000000000000000000
-2300000000000000000000000000002300000025252521272525252527272335350035000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000023000000000000000000000000000000000000000000
-2300000009000a00090009000d0000230000222a232323232323232323232325252525000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000023000000000000000000000000000000000000000000
-230000000000000000000000000000232200000000000000000000232323232323232b000000000000003535362300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000023000000000000000000000000000000000000000000
-2300000000000000000000000000002300220000000000000000002323232323000000000000000000002521272300000000000000000000000000000000000000000035002825260735353700000000000000000000000000000000000000000000000000000025252523000000000000000000000000000000000000000000
-23000000000000000000000000000023272725252527270000000023232323233606373637373600003324232323003536000000000000000000000000002c3537002825252924242525252526003737370000000000000000000000000000000000000000000023232323000000000000000000000000000000000000000000
-230000000000000000000000000000232323232323232b002200002323232323212727272727272727252323232325252526003637000000000000000707282525252923232323232323232323252525252600373700000000000000000000000000000000000023232323000000000000000000000000000000000000000000
-230000000000000000000000000000230000000000000000000022232323232323232323232323232323232323232424242425252526003735070728252529232323232323232323232323232323232323232525252600373737373737373737372d370028252723232323000000000000000000000000000000000000000000
-230006353700370035070707372c352335363735373637372821212323232323232323232323232323232323232323232323232323232525272727292323232423232323232323232323232323232323232323232323272727272727272727272727272729242323232323000000000000000000000000000000000000000000
-2325272525272725252125272527272321212121212121212923232323232323232323232323232323232323232323232323232323232323232323232324242423232323232323232323232323232323232323232323232323232323232323232323232324232424242423000000000000000000000000000000000000000000
-2323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232324232424242423000000000000000000000000000000000000000000
-2323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232324242323232323000000000000000000000000000000000000000000
-__sfx__
-011000001c15500000000000000000000000000000000000281552415500000000001f1552115523155000001c15500000000000000000000000000000000000281552415500000000001f155211552315500000
-011000000c1550000000000000000c1550000000000000000c1550000000000000000c1550000000000000000c1550000000000000000c1550000000000000000c1550000000000000000c155000000000000000
-011000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c155000000c15500000
-011000001015500000101550000010155000001015500000101550000010155000001015500000101550000010155000001015500000101550000010155000001015500000101550000010155000001015500000
-011000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e155000000e15500000
-011000001015500000101550000010155000001015500000101550000010155000001015500000101550000010155000001015500000101550000010155000001015500000101550000010155000001015500000
-011000001c1751c1551c1351c11500000000000000000000281552415500000000001f1552115523155000001c1751c1551c1351c11500000000000000000000281552415500000000001f155211552315500000
-011000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a155000001a15500000
-0110000023050000001f0500000023050000001f0500000023050000001f0500000023050000001f0500000023050000001f0500000023050000001f0500000023050000001f050000001f050210502305000000
-001000002605526035230552303526055260352305523035260552603523055230352605526035230552303526055260352305523035260552603523055230352605526035230552303526055260352305523035
-001000001c3751c3551c3351c31500300003000030000300283552435500300003001f3552135523355003001c3751c3551c3351c31500300003000030000300283552435500300003001f355213552335500300
-01100000000000000000000000001a3001a3001a30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00100000240500000000000000001f050000000000000000240500000000000000001f050000000000000000240500000000000000001f050000000000000000240500000000000000001f050000002400000000
-011000001a1501a1501a1501a15000000000001a150000001d15000000000001c150000000000018150000001a1501a1001a1501d150211501d1501f1501f1501f15000000000000000000000000000000000000
-011000002115021150211501f1501f150000001d1501d1501c1501c150000001815018150181501c1501c1501a1501a1501a1501d1501c150181501a150000000000000000000000000000000000000000000000
-__music__
-01 00014344
-00 00024344
-00 00020344
-00 00024344
-00 00424304
-00 01424406
-00 41024306
-00 44420603
-00 00024344
-00 00424307
-00 00024344
-00 07020306
-00 07064344
-00 06480c44
-00 06084344
-00 0a080944
-02 4b080944
-00 41424344
-01 4142430d
-02 4142430e
-
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000000000000000002300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+230000000000000000000000002d002323000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2300000000000000212121212121232323000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2321212121212121242424242424242323000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2424242424242424242424242424242323000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2424242424242424242424242424242400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+2424242424242424242424242424242400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
