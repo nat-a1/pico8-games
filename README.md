@@ -1,3 +1,10 @@
-bobby: an old game i should recast and finish
+** in development **
+# Pico8 games/experiments
 
-unnamed: idk.
+## bobby
+
+a chill game where you have to water all the flowers in the garden!
+
+## unnamed
+
+an attempt to make a rhythmic platformer
