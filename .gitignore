@@ -1,0 +1,6 @@
+*.txt
+*.p8
+*.png
+!bobby.p8
+!platformer_base.p8
+!unnamed.p8
