@@ -91,6 +91,51 @@ __lua__
     end
 --
 
+-- clouds
+    foreclouds={}backclouds={}
+    function make_cloud(_x,_y,bg)
+        local cloud = {}
+        local length = flr(3+rnd(2))
+        offset=0
+        
+        cloud.size=1+rnd(0.8)
+
+        cloud.x=flr(_x)
+        cloud.y = flr(_y) +cloud.size*10
+        for i=0,length do
+            local s =  (i <=1 or i == length)and 4 or (6+rnd(3))
+            s=s*cloud.size
+            add(cloud,{x=flr(offset*1.1),y=-rnd(.7)-s/2,s=s})
+            offset+=s
+        end
+        if(bg==true) then
+            add(backclouds,cloud)
+        else
+            add(foreclouds,cloud)
+        end
+    end
+
+    function print_forepuff(c)
+        --for puff in all(c) do circfill(c.x+puff.x,c.y+puff.y,puff.s+1,12) end
+        
+        for puff in all(c) do circfill(c.x+puff.x,c.y+puff.y,puff.s,7) end
+    	
+    end
+    function print_backpuff(c)
+        fillp(░)
+        for puff in all(c) do circfill(c.x+puff.x,c.y+puff.y,puff.s+2,12) end
+        for puff in all(c) do circfill(c.x+puff.x,c.y+puff.y,puff.s,7) end
+    	fillp()
+    end
+
+    function printbackcloud()
+        for c in all(backclouds) do print_backpuff(c) end
+    end
+    function printforecloud()
+        for c in all(foreclouds)do print_forepuff(c) end
+    end
+--
+
 -- motion functions (--> move to character class?)
 ---------------------------------------
     function go_left(p) 
