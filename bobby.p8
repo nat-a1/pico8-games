@@ -473,7 +473,12 @@ add(entities,joe)
 add(entities,p)
 
 
-
+for i=0,3 do
+    make_cloud(rnd(128),30+rnd(50),true)
+end
+for i=0,8 do
+	make_cloud(rnd(128),110+rnd(10),false)
+end
 
 ------
 
@@ -489,10 +494,13 @@ function _draw()
 	line(0,8,128,8,12)	
 	rectfill(0,11,128,14,12)   
     rectfill(0,16,128,100,12)
+    printbackcloud()
 
     map()
     for e in all(entities) do e:draw()end
     draw_water()
+    
+    printforecloud()
 end
 
 function _update()
