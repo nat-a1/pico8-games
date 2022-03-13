@@ -439,7 +439,7 @@ __lua__
         ['camera']={
             screen_w=128,screen_h=128,
             update=nul,
-            pos = v(0,0),
+            pos = v(0,0),spd=v(0,0),
             main_update=function(s)
                 
                 if(bobby.pos.x>levels[cur_level+1].borders[2]) then
@@ -461,9 +461,8 @@ __lua__
                     while (#(s.pos-tarpos) > 1)do
                         local dir = ( tarpos - s.pos)
                         
-                        s.acc = dir/100
-                        s.spd += s.acc
-                        s.spd = s.spd | 6
+                        s.spd = dir/5
+                        s.spd = s.spd | 10
 
                         s.pos += s.spd 
                         yield()
