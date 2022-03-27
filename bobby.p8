@@ -92,47 +92,23 @@ __lua__
 --
 
 -- clouds
-    foreclouds={}backclouds={}
-    function make_cloud(_x,_y,bg)
-        local cloud = {}
-        local length = flr(3+rnd(2))
-        offset=0
-        
-        cloud.size=1+rnd(0.8)
-
-        cloud.x=flr(_x)
-        cloud.y = flr(_y) +cloud.size*10
-        for i=0,length do
-            local s =  (i <=1 or i == length)and 4 or (6+rnd(3))
-            s=s*cloud.size
-            add(cloud,{x=flr(offset*1.1),y=-rnd(.7)-s/2,s=s})
-            offset+=s
+    cloudlayers={}
+    function cloud_layer(x,y,size,col,len)
+        local cloudlayer = {}
+        local xofs = x
+        for i=0,len do
+            local circ_size = (2+rnd(10))*size
+            local xx,yy = xofs + circ_size/2, y - circ_size*1.5 + rnd(circ_size*1.5)
+            add(cloudlayer,{x=xx,y=yy,s=circ_size,c=col})
+            xofs += 2
         end
-        if(bg==true) then
-            add(backclouds,cloud)
-        else
-            add(foreclouds,cloud)
+        add(cloudlayers,cloudlayer)
+    end
+    function printcloudlayers()
+        for l in all(cloudlayers) do 
+            for c in all(l) do circfill(c.x,c.y,c.s+1,12) end 
+            for c in all(l) do circfill(c.x,c.y,c.s,c.c) end 
         end
-    end
-
-    function print_forepuff(c)
-        --for puff in all(c) do circfill(c.x+puff.x,c.y+puff.y,puff.s+1,12) end
-        
-        for puff in all(c) do circfill(c.x+puff.x,c.y+puff.y,puff.s,7) end
-    	
-    end
-    function print_backpuff(c)
-        fillp(░)
-        for puff in all(c) do circfill(c.x+puff.x,c.y+puff.y,puff.s+2,12) end
-        for puff in all(c) do circfill(c.x+puff.x,c.y+puff.y,puff.s,7) end
-    	fillp()
-    end
-
-    function printbackcloud()
-        for c in all(backclouds) do print_backpuff(c) end
-    end
-    function printforecloud()
-        for c in all(foreclouds)do print_forepuff(c) end
     end
 --
 
@@ -517,13 +493,8 @@ p=new_entity('player',{
 add(entities,joe)
 add(entities,p)
 
-
-for i=0,3 do
-    make_cloud(rnd(128),30+rnd(50),true)
-end
-for i=0,8 do
-	make_cloud(rnd(128),110+rnd(10),false)
-end
+h=90 cs = 1
+cloud_layer(0,h+(0-0.2*0)*10,cs - 0.2*0,7,50)
 
 ------
 
@@ -534,18 +505,18 @@ function _draw()
     cls(7)
     
     --rectfill(0,0,126,10,1)
-    --rectfill(0,40,126,50,7)
-    	
+    --rectfill(0,40,126,50,7)	
+
 	line(0,8,128,8,12)	
 	rectfill(0,11,128,14,12)   
     rectfill(0,16,128,100,12)
-    printbackcloud()
+
+    printcloudlayers()
 
     map()
     for e in all(entities) do e:draw()end
     draw_water()
     
-    printforecloud()
 end
 
 function _update()
